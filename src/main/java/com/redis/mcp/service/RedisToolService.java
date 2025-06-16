@@ -89,17 +89,28 @@ public class RedisToolService {
         try {
             Map<String, Object> args = objectMapper.readValue(jsonArgs, Map.class);
             Object keyObj = args.get("keys");
-            if (keyObj instanceof List) {
-                List<String> keys = (List<String>) keyObj;
-                redisTemplate.delete(keys);
-                return "Successfully deleted " + keys.size() + " keys";
-            } else {
-                String key = (String) keyObj;
-                redisTemplate.delete(key);
-                return "Successfully deleted key: " + key;
+            
+            if (keyObj == null) {
+                return "Error: 'keys' parameter is required";
             }
+            
+            if (keyObj instanceof List) {
+                List<?> rawKeys = (List<?>) keyObj;
+                List<String> keys = rawKeys.stream()
+                    .filter(String.class::isInstance)
+                    .map(String.class::cast)
+                    .toList();
+                Long deleted = redisTemplate.delete(keys);
+                return "Deleted " + deleted + " keys";
+            } else if (keyObj instanceof String) {
+                Long deleted = redisTemplate.delete((String) keyObj);
+                return deleted > 0 ? "Key deleted" : "Key not found";
+            }
+            return "Invalid key type: " + keyObj.getClass().getSimpleName();
         } catch (IOException e) {
-            return "Error parsing JSON arguments: " + e.getMessage();
+            return "Invalid JSON format: " + e.getMessage().split(":")[0];
+        } catch (Exception e) {
+            return "Delete operation failed: " + e.getMessage();
         }
     }
 
