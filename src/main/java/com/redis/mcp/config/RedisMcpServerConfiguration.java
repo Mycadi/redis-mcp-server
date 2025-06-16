@@ -21,17 +21,10 @@ public class RedisMcpServerConfiguration {
     @Bean
     public LettuceConnectionFactory redisConnectionFactory() {
         String redisUrl = System.getProperty("redis.url", "redis://localhost:6379");
-        String authPart = redisUrl.contains("@") ? redisUrl.split("@")[0].replace("redis://", "") : "";
-        String hostPortPart = redisUrl.contains("@") ? redisUrl.split("@")[1] : redisUrl.replace("redis://", "");
-        
-        String[] credentials = authPart.split(":");
-        String host = hostPortPart.split(":")[0];
-        int port = Integer.parseInt(hostPortPart.split(":")[1]);
-        
+        String[] parts = redisUrl.replace("redis://", "").split(":");
+        String host = parts[0];
+        int port = Integer.parseInt(parts[1]);
         RedisStandaloneConfiguration config = new RedisStandaloneConfiguration(host, port);
-        if (credentials.length > 1) {
-            config.setPassword(credentials[1]);
-        }
         return new LettuceConnectionFactory(config);
     }
 
@@ -49,4 +42,4 @@ public class RedisMcpServerConfiguration {
         return template;
     }
 
-}
+}    
