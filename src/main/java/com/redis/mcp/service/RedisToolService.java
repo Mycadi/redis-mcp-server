@@ -64,14 +64,18 @@ public class RedisToolService {
     public String getValue(String jsonArgs) {
         try {
             Map<String, Object> args = objectMapper.readValue(jsonArgs, Map.class);
-            String key = (String) args.get("keys");
-            String result = redisTemplate.opsForValue().get(key);
-            if (result == null) {
-                return "Key not found: " + key;
+            String key = (String) args.get("key");
+            
+            if (!StringUtils.hasText(key)) {
+                return "Error: 'key' parameter is required";
             }
-            return result;
+            
+            String result = redisTemplate.opsForValue().get(key);
+            return result != null ? result : "Key not found: " + key;
+        } catch (IOException e) {
+            return "Invalid JSON format: " + e.getMessage().split(":")[0];
         } catch (Exception e) {
-            return "Error parsing JSON arguments: " + e.getMessage();
+            return "Operation failed: " + e.getMessage();
         }
     }
 
@@ -118,4 +122,4 @@ public class RedisToolService {
             return "Error parsing JSON arguments: " + e.getMessage();
         }
     }
-}    
+}
