@@ -103,8 +103,8 @@ public class RedisToolService {
                 Long deleted = redisTemplate.delete(keys);
                 return "Deleted " + deleted + " keys";
             } else if (keyObj instanceof String) {
-                Long deleted = redisTemplate.delete((String) keyObj);
-                return deleted > 0 ? "Key deleted" : "Key not found";
+                Boolean deleted = redisTemplate.delete((String) keyObj);
+                return deleted ? "Key deleted" : "Key not found";
             }
             return "Invalid key type: " + keyObj.getClass().getSimpleName();
         } catch (IOException e) {
