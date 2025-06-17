@@ -24,7 +24,12 @@ public class RedisMcpServerConfiguration {
         String[] parts = redisUrl.replace("redis://", "").split(":");
         String host = parts[0];
         int port = Integer.parseInt(parts[1]);
+        String password = System.getProperty("redis.password");
+        
         RedisStandaloneConfiguration config = new RedisStandaloneConfiguration(host, port);
+        if (password != null && !password.isEmpty()) {
+            config.setPassword(password);
+        }
         return new LettuceConnectionFactory(config);
     }
 
@@ -42,4 +47,4 @@ public class RedisMcpServerConfiguration {
         return template;
     }
 
-}    
+}
