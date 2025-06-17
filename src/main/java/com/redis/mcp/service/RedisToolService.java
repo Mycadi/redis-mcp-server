@@ -1,10 +1,15 @@
 package com.redis.mcp.service;
 
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+
+import org.springframework.data.redis.connection.RedisCallback;
+import org.springframework.data.redis.core.Cursor;
+import org.springframework.data.redis.core.ScanOptions;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.ai.tool.annotation.Tool;
@@ -123,8 +128,8 @@ public class RedisToolService {
     }
 
     /**
-     * List Redis keys matching a pattern
-     * @param jsonArgs JSON string containing optional pattern
+     * List Redis keys matching a pattern using SCAN command for better performance
+     * @param jsonArgs JSON string containing optional pattern and batchSize
      * @return List of matching keys or error message
      */
     @Tool(name = "list", description = "List Redis keys matching a pattern")
@@ -135,10 +140,32 @@ public class RedisToolService {
                 args = objectMapper.readValue(jsonArgs, Map.class);
             }
             String pattern = (String) args.getOrDefault("pattern", "*");
-            List<String> keys = redisTemplate.keys(pattern).stream().collect(Collectors.toList());
+            Integer batchSize = (Integer) args.getOrDefault("batchSize", 100);
+            
+            // Use ScanOptions to configure the SCAN operation
+            ScanOptions options = ScanOptions.scanOptions()
+                    .match(pattern)
+                    .count(batchSize)
+                    .build();
+            
+            // Use SCAN instead of KEYS for better performance with large datasets
+            List<String> keys = new ArrayList<>();
+            redisTemplate.execute((RedisCallback<Void>) connection -> {
+                try (Cursor<byte[]> cursor = connection.scan(options)) {
+                    while (cursor.hasNext()) {
+                        keys.add(new String(cursor.next()));
+                    }
+                } catch (IOException e) {
+                    throw new RuntimeException("Error scanning Redis keys: " + e.getMessage(), e);
+                }
+                return null;
+            });
+            
             return keys.size() > 0 ? "Found keys:\n" + String.join("\n", keys) : "No keys found matching the pattern";
         } catch (IOException e) {
             return "Error parsing JSON arguments: " + e.getMessage();
+        } catch (Exception e) {
+            return "Operation failed: " + e.getMessage();
         }
     }
 }
