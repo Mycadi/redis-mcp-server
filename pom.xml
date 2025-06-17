@@ -47,6 +47,12 @@
             <artifactId>spring-boot-starter-data-redis</artifactId>
         </dependency>
         
+        <!-- Redis connection pool support -->
+        <dependency>
+            <groupId>org.apache.commons</groupId>
+            <artifactId>commons-pool2</artifactId>
+        </dependency>
+        
         <dependency>
             <groupId>com.alibaba</groupId>
             <artifactId>fastjson</artifactId>
