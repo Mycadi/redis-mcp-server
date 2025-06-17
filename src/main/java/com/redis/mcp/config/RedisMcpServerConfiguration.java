@@ -1,51 +1,49 @@
 package com.redis.mcp.config;
 
-import java.time.Duration;
-
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.data.redis.RedisProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.connection.RedisStandaloneConfiguration;
+import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 
-import lombok.extern.slf4j.Slf4j;
-
 /**
  * Configuration class for Redis MCP Server
- * Uses Spring Boot's auto-configuration for Redis
  * @author yue9527
  */
 @Configuration
-@Slf4j
 public class RedisMcpServerConfiguration {
 
-    @Value("${spring.data.redis.host:localhost}")
-    private String redisHost;
-    
-    @Value("${spring.data.redis.port:6379}")
-    private int redisPort;
-    
+    /**
+     * Creates a LettuceConnectionFactory bean for Redis connection
+     * @return Configured LettuceConnectionFactory
+     */
+    @Bean
+    public LettuceConnectionFactory redisConnectionFactory() {
+        String redisUrl = System.getProperty("redis.url", "redis://localhost:6379");
+        String[] parts = redisUrl.replace("redis://", "").split(":");
+        String host = parts[0];
+        int port = Integer.parseInt(parts[1]);
+        String password = System.getProperty("redis.password");
+        
+        RedisStandaloneConfiguration config = new RedisStandaloneConfiguration(host, port);
+        if (password != null && !password.isEmpty()) {
+            config.setPassword(password);
+        }
+        return new LettuceConnectionFactory(config);
+    }
+
     /**
      * Creates a StringRedisTemplate bean for Redis operations
-     * Uses auto-configured RedisConnectionFactory
-     * @param redisConnectionFactory Auto-configured RedisConnectionFactory instance
+     * @param redisConnectionFactory LettuceConnectionFactory instance
      * @return Configured StringRedisTemplate
      */
-
     @Bean
-    public StringRedisTemplate redisTemplate(RedisConnectionFactory redisConnectionFactory) {
+    public StringRedisTemplate redisTemplate(LettuceConnectionFactory redisConnectionFactory) {
         StringRedisTemplate template = new StringRedisTemplate();
         template.setConnectionFactory(redisConnectionFactory);
         template.setKeySerializer(new StringRedisSerializer());
         template.setValueSerializer(new StringRedisSerializer());
-        template.setHashKeySerializer(new StringRedisSerializer());
-        template.setHashValueSerializer(new StringRedisSerializer());
-        template.setEnableTransactionSupport(false); // Disable transactions for better performance
-        template.afterPropertiesSet();
-        
-        log.info("Configured Redis connection to {}:{} with optimized template settings", redisHost, redisPort);
         return template;
     }
 
