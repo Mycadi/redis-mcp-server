@@ -88,18 +88,37 @@ public class RedisToolService {
     public String deleteValue(String jsonArgs) {
         try {
             Map<String, Object> args = objectMapper.readValue(jsonArgs, Map.class);
-            Object keyObj = args.get("keys");
+            Object keyObj = args.get("key");
+            
+            if (keyObj == null) {
+                return "Error: 'key' parameter is required";
+            }
+            
             if (keyObj instanceof List) {
-                List<String> keys = (List<String>) keyObj;
-                redisTemplate.delete(keys);
-                return "Successfully deleted " + keys.size() + " keys";
+                List<String> keys = ((List<?>) keyObj).stream()
+                    .filter(k -> k != null)
+                    .map(Object::toString)
+                    .collect(Collectors.toList());
+                
+                if (keys.isEmpty()) {
+                    return "Error: No valid keys provided";
+                }
+                
+                Long deletedCount = redisTemplate.delete(keys);
+                return "Successfully deleted " + deletedCount + " keys";
             } else {
-                String key = (String) keyObj;
-                redisTemplate.delete(key);
-                return "Successfully deleted key: " + key;
+                String key = keyObj.toString();
+                if (!StringUtils.hasText(key)) {
+                    return "Error: Empty key provided";
+                }
+                
+                Boolean deleted = redisTemplate.delete(key);
+                return deleted ? "Successfully deleted key: " + key : "Key not found: " + key;
             }
         } catch (IOException e) {
-            return "Error parsing JSON arguments: " + e.getMessage();
+            return "Invalid JSON format: " + e.getMessage().split(":")[0];
+        } catch (Exception e) {
+            return "Operation failed: " + e.getMessage();
         }
     }
 
