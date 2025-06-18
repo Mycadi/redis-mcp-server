@@ -155,7 +155,7 @@ public class RedisToolService {
                     while (cursor.hasNext()) {
                         keys.add(new String(cursor.next()));
                     }
-                } catch (IOException e) {
+                } catch (Exception e) {
                     throw new RuntimeException("Error scanning Redis keys: " + e.getMessage(), e);
                 }
                 return null;
