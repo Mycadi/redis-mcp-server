@@ -25,11 +25,13 @@ public class RedisMcpServerConfiguration {
         String host = parts[0];
         int port = Integer.parseInt(parts[1]);
         String password = System.getProperty("redis.password");
+        int database = Integer.parseInt(System.getProperty("redis.database", "0"));
         
         RedisStandaloneConfiguration config = new RedisStandaloneConfiguration(host, port);
         if (password != null && !password.isEmpty()) {
             config.setPassword(password);
         }
+        config.setDatabase(database);
         return new LettuceConnectionFactory(config);
     }
 
