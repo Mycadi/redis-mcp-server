@@ -62,10 +62,10 @@ public class RedisToolService {
 
     /**
      * Get value from Redis by key
-     * @param jsonArgs JSON string containing the key
+     * @param jsonArgs JSON string containing the key and optional field for hash type
      * @return Retrieved value or error message
      */
-    @Tool(name = "get", description = "Get value from Redis by key")
+    @Tool(name = "get", description = "Get value from Redis by key, supports string and hash types")
     public String getValue(String jsonArgs) {
         try {
             Map<String, Object> args = new HashMap<>();
@@ -83,8 +83,51 @@ public class RedisToolService {
                 return "Error: Empty key provided";
             }
             
-            String result = redisTemplate.opsForValue().get(key);
-            return result != null ? result : "Key not found: " + key;
+            // Check if field parameter is provided for hash operations
+            Object fieldObj = args.get("field");
+            
+            // If field is provided, treat as hash operation
+            if (fieldObj != null) {
+                String field = fieldObj.toString();
+                if (!StringUtils.hasText(field)) {
+                    return "Error: Empty field provided for hash operation";
+                }
+                
+                String hashValue = redisTemplate.opsForHash().get(key, field) != null ? 
+                                 redisTemplate.opsForHash().get(key, field).toString() : null;
+                                 
+                if (hashValue == null) {
+                    return "Hash field not found: " + field + " in key: " + key;
+                }
+                return hashValue;
+            } else {
+                // Check if key exists
+                if (!Boolean.TRUE.equals(redisTemplate.hasKey(key))) {
+                    return "Key not found: " + key;
+                }
+                
+                // Try to determine the type of the key
+                String type = redisTemplate.type(key);
+                
+                if ("hash".equalsIgnoreCase(type)) {
+                    // For hash type, return all entries
+                    Map<Object, Object> entries = redisTemplate.opsForHash().entries(key);
+                    if (entries.isEmpty()) {
+                        return "Hash is empty for key: " + key;
+                    }
+                    
+                    StringBuilder result = new StringBuilder("Hash contents for key: " + key + "\n");
+                    for (Map.Entry<Object, Object> entry : entries.entrySet()) {
+                        result.append(entry.getKey()).append(": ")
+                              .append(entry.getValue()).append("\n");
+                    }
+                    return result.toString();
+                } else {
+                    // For string type or other types, use opsForValue
+                    String result = redisTemplate.opsForValue().get(key);
+                    return result != null ? result : "Key exists but value could not be retrieved: " + key;
+                }
+            }
         } catch (IOException e) {
             return "Invalid JSON format: " + e.getMessage().split(":")[0];
         } catch (Exception e) {
