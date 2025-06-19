@@ -15,6 +15,9 @@ import org.springframework.data.redis.core.ZSetOperations;
 import org.springframework.data.redis.connection.stream.StreamReadOptions;
 import org.springframework.data.redis.connection.stream.StreamOffset;
 import org.springframework.data.redis.connection.stream.MapRecord;
+import org.springframework.data.redis.connection.stream.Record;
+import org.springframework.data.redis.connection.stream.RecordId;
+import org.springframework.data.redis.connection.stream.StreamRecordId;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.ai.tool.annotation.Tool;
@@ -44,24 +47,218 @@ public class RedisToolService {
 
     /**
      * Set a key-value pair in Redis with optional expiration time
-     * @param jsonArgs JSON string containing key, value and optional expireSeconds
+     * @param jsonArgs JSON string containing key, value and optional parameters for different data types:
+     *                - For string: key, value, expireSeconds
+     *                - For list: key, value, index (optional), append (boolean, optional)
+     *                - For set: key, value (member to add)
+     *                - For zset: key, value (member), score
+     *                - For hash: key, field, value
+     *                - For stream: key, value (map of fields), id (optional)
      * @return Operation result message
      */
-    @Tool(name = "set", description = "Set a Redis key-value pair with optional expiration time")
+    @Tool(name = "set", description = "Set a Redis key-value pair with optional expiration time, supports string, list, set, zset, hash, and stream types")
     public String setValue(String jsonArgs) {
         try {
             Map<String, Object> args = objectMapper.readValue(jsonArgs, Map.class);
-            String key = (String) args.get("key");
-            String value = (String) args.get("value");
-            Integer expireSeconds = (Integer) args.get("expireSeconds");
-            if (expireSeconds != null) {
-                redisTemplate.opsForValue().set(key, value, expireSeconds);
-            } else {
-                redisTemplate.opsForValue().set(key, value);
+            
+            // Validate key parameter
+            Object keyObj = args.get("key");
+            if (keyObj == null) {
+                return "Error: 'key' parameter is required";
             }
-            return "Successfully set key: " + key;
+            String key = keyObj.toString();
+            if (!StringUtils.hasText(key)) {
+                return "Error: Empty key provided";
+            }
+            
+            // Get data type parameter or determine from existing key
+            String dataTypeStr = (String) args.get("type");
+            org.springframework.data.redis.connection.DataType dataType = null;
+            
+            // If key exists, get its type
+            boolean keyExists = Boolean.TRUE.equals(redisTemplate.hasKey(key));
+            if (keyExists) {
+                dataType = redisTemplate.type(key);
+            }
+            
+            // If type is explicitly specified, use it
+            if (dataTypeStr != null) {
+                try {
+                    dataTypeStr = dataTypeStr.toUpperCase();
+                    if ("STRING".equals(dataTypeStr)) {
+                        dataType = org.springframework.data.redis.connection.DataType.STRING;
+                    } else if ("LIST".equals(dataTypeStr)) {
+                        dataType = org.springframework.data.redis.connection.DataType.LIST;
+                    } else if ("SET".equals(dataTypeStr)) {
+                        dataType = org.springframework.data.redis.connection.DataType.SET;
+                    } else if ("ZSET".equals(dataTypeStr)) {
+                        dataType = org.springframework.data.redis.connection.DataType.ZSET;
+                    } else if ("HASH".equals(dataTypeStr)) {
+                        dataType = org.springframework.data.redis.connection.DataType.HASH;
+                    } else if ("STREAM".equals(dataTypeStr)) {
+                        dataType = org.springframework.data.redis.connection.DataType.STREAM;
+                    } else {
+                        return "Error: Unsupported data type: " + dataTypeStr;
+                    }
+                } catch (Exception e) {
+                    return "Error: Invalid data type: " + dataTypeStr;
+                }
+            }
+            
+            // If type is not specified and key doesn't exist, default to string
+            if (dataType == null) {
+                // Determine type from parameters
+                if (args.containsKey("field")) {
+                    dataType = org.springframework.data.redis.connection.DataType.HASH;
+                } else if (args.containsKey("score")) {
+                    dataType = org.springframework.data.redis.connection.DataType.ZSET;
+                } else if (args.containsKey("index")) {
+                    dataType = org.springframework.data.redis.connection.DataType.LIST;
+                } else {
+                    // Default to string
+                    dataType = org.springframework.data.redis.connection.DataType.STRING;
+                }
+            }
+            
+            // Handle different data types
+            if (org.springframework.data.redis.connection.DataType.STRING.equals(dataType)) {
+                // String type
+                Object valueObj = args.get("value");
+                if (valueObj == null) {
+                    return "Error: 'value' parameter is required for string operations";
+                }
+                String value = valueObj.toString();
+                
+                Integer expireSeconds = (Integer) args.get("expireSeconds");
+                if (expireSeconds != null) {
+                    redisTemplate.opsForValue().set(key, value, expireSeconds);
+                } else {
+                    redisTemplate.opsForValue().set(key, value);
+                }
+                return "Successfully set string key: " + key;
+            } 
+            else if (org.springframework.data.redis.connection.DataType.LIST.equals(dataType)) {
+                // List type
+                Object valueObj = args.get("value");
+                if (valueObj == null) {
+                    return "Error: 'value' parameter is required for list operations";
+                }
+                String value = valueObj.toString();
+                
+                // Check if index is provided
+                Object indexObj = args.get("index");
+                if (indexObj != null) {
+                    try {
+                        int index = Integer.parseInt(indexObj.toString());
+                        redisTemplate.opsForList().set(key, index, value);
+                        return "Successfully set value at index " + index + " in list: " + key;
+                    } catch (NumberFormatException e) {
+                        return "Error: Invalid index format. Must be an integer";
+                    }
+                } else {
+                    // Check if append flag is provided
+                    Boolean append = (Boolean) args.get("append");
+                    if (Boolean.TRUE.equals(append)) {
+                        redisTemplate.opsForList().rightPush(key, value);
+                        return "Successfully appended value to list: " + key;
+                    } else {
+                        redisTemplate.opsForList().leftPush(key, value);
+                        return "Successfully prepended value to list: " + key;
+                    }
+                }
+            }
+            else if (org.springframework.data.redis.connection.DataType.SET.equals(dataType)) {
+                // Set type
+                Object valueObj = args.get("value");
+                if (valueObj == null) {
+                    return "Error: 'value' parameter is required for set operations";
+                }
+                String value = valueObj.toString();
+                
+                Long added = redisTemplate.opsForSet().add(key, value);
+                return added > 0 ? 
+                       "Successfully added member to set: " + key : 
+                       "Member already exists in set: " + key;
+            }
+            else if (org.springframework.data.redis.connection.DataType.ZSET.equals(dataType)) {
+                // Sorted Set type
+                Object valueObj = args.get("value");
+                if (valueObj == null) {
+                    return "Error: 'value' parameter is required for sorted set operations";
+                }
+                String value = valueObj.toString();
+                
+                Object scoreObj = args.get("score");
+                if (scoreObj == null) {
+                    return "Error: 'score' parameter is required for sorted set operations";
+                }
+                
+                try {
+                    double score = Double.parseDouble(scoreObj.toString());
+                    Boolean added = redisTemplate.opsForZSet().add(key, value, score);
+                    return added ? 
+                           "Successfully added member with score to sorted set: " + key : 
+                           "Member updated in sorted set: " + key;
+                } catch (NumberFormatException e) {
+                    return "Error: Invalid score format. Must be a number";
+                }
+            }
+            else if (org.springframework.data.redis.connection.DataType.HASH.equals(dataType)) {
+                // Hash type
+                Object fieldObj = args.get("field");
+                if (fieldObj == null) {
+                    return "Error: 'field' parameter is required for hash operations";
+                }
+                String field = fieldObj.toString();
+                if (!StringUtils.hasText(field)) {
+                    return "Error: Empty field provided for hash operation";
+                }
+                
+                Object valueObj = args.get("value");
+                if (valueObj == null) {
+                    return "Error: 'value' parameter is required for hash operations";
+                }
+                String value = valueObj.toString();
+                
+                redisTemplate.opsForHash().put(key, field, value);
+                return "Successfully set hash field: " + field + " in key: " + key;
+            }
+            else if (org.springframework.data.redis.connection.DataType.STREAM.equals(dataType)) {
+                // Stream type
+                Object valueObj = args.get("value");
+                if (valueObj == null || !(valueObj instanceof Map)) {
+                    return "Error: 'value' parameter must be a map for stream operations";
+                }
+                
+                Map<String, String> streamEntries = new HashMap<>();
+                ((Map<?, ?>) valueObj).forEach((k, v) -> {
+                    if (k != null && v != null) {
+                        streamEntries.put(k.toString(), v.toString());
+                    }
+                });
+                
+                if (streamEntries.isEmpty()) {
+                    return "Error: Stream entries map is empty";
+                }
+                
+                String id = (String) args.get("id");
+                RecordId recordId;
+                
+                if (id != null && !id.isEmpty()) {
+                    recordId = redisTemplate.opsForStream().add(key, streamEntries, StreamRecordId.of(id));
+                } else {
+                    recordId = redisTemplate.opsForStream().add(key, streamEntries);
+                }
+                
+                return "Successfully added entry to stream: " + key + " with ID: " + recordId;
+            }
+            else {
+                return "Error: Unsupported Redis data type: " + dataType;
+            }
         } catch (IOException e) {
             return "Error parsing JSON arguments: " + e.getMessage();
+        } catch (Exception e) {
+            return "Operation failed: " + e.getMessage();
         }
     }
 
