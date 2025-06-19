@@ -107,9 +107,9 @@ public class RedisToolService {
                 }
                 
                 // Try to determine the type of the key
-                String type = redisTemplate.type(key);
+                org.springframework.data.redis.connection.DataType dataType = redisTemplate.type(key);
                 
-                if ("hash".equalsIgnoreCase(type)) {
+                if (org.springframework.data.redis.connection.DataType.HASH.equals(dataType)) {
                     // For hash type, return all entries
                     Map<Object, Object> entries = redisTemplate.opsForHash().entries(key);
                     if (entries.isEmpty()) {
