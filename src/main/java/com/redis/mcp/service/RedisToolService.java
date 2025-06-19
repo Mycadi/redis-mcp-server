@@ -68,11 +68,19 @@ public class RedisToolService {
     @Tool(name = "get", description = "Get value from Redis by key")
     public String getValue(String jsonArgs) {
         try {
-            Map<String, Object> args = objectMapper.readValue(jsonArgs, Map.class);
-            String key = (String) args.get("key");
+            Map<String, Object> args = new HashMap<>();
+            if (StringUtils.hasLength(jsonArgs)) {
+                args = objectMapper.readValue(jsonArgs, Map.class);
+            }
             
-            if (!StringUtils.hasText(key)) {
+            Object keyObj = args.get("key");
+            if (keyObj == null) {
                 return "Error: 'key' parameter is required";
+            }
+            
+            String key = keyObj.toString();
+            if (!StringUtils.hasText(key)) {
+                return "Error: Empty key provided";
             }
             
             String result = redisTemplate.opsForValue().get(key);
