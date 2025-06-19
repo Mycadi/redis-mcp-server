@@ -438,11 +438,18 @@ public class RedisToolService {
     }
 
     /**
-     * Delete one or multiple keys from Redis
-     * @param jsonArgs JSON string containing key(s) to delete
+     * Delete one or multiple keys from Redis, or delete specific elements from complex data types
+     * @param jsonArgs JSON string containing parameters:
+     *                - key: String or List - The key(s) to delete
+     *                - field: String - For hash type, the field to delete
+     *                - member: String - For set/zset type, the member to delete
+     *                - index: Integer - For list type, the index to delete
+     *                - count: Integer - For list type with value, the count of occurrences to remove
+     *                - value: String - For list type with count, the value to remove
+     *                - id: String - For stream type, the message ID to delete
      * @return Operation result message
      */
-    @Tool(name = "delete", description = "Delete one or multiple keys from Redis")
+    @Tool(name = "delete", description = "Delete Redis keys or specific elements from complex data types (string, list, set, zset, hash, stream)")
     public String deleteValue(String jsonArgs) {
         try {
             Map<String, Object> args = objectMapper.readValue(jsonArgs, Map.class);
@@ -452,6 +459,7 @@ public class RedisToolService {
                 return "Error: 'key' parameter is required";
             }
             
+            // Handle multiple keys deletion
             if (keyObj instanceof List) {
                 List<String> keys = ((List<?>) keyObj).stream()
                     .filter(k -> k != null)
@@ -464,14 +472,112 @@ public class RedisToolService {
                 
                 Long deletedCount = redisTemplate.delete(keys);
                 return "Successfully deleted " + deletedCount + " keys";
-            } else {
-                String key = keyObj.toString();
-                if (!StringUtils.hasText(key)) {
-                    return "Error: Empty key provided";
-                }
-                
+            } 
+            
+            // Handle single key operations
+            String key = keyObj.toString();
+            if (!StringUtils.hasText(key)) {
+                return "Error: Empty key provided";
+            }
+            
+            // Check if key exists
+            if (!Boolean.TRUE.equals(redisTemplate.hasKey(key))) {
+                return "Key not found: " + key;
+            }
+            
+            // Check if we're deleting a specific element from a complex data type
+            Object fieldObj = args.get("field");
+            Object memberObj = args.get("member");
+            Object indexObj = args.get("index");
+            Object valueObj = args.get("value");
+            Object countObj = args.get("count");
+            Object idObj = args.get("id");
+            
+            // If no specific element parameters, delete the entire key
+            if (fieldObj == null && memberObj == null && indexObj == null && 
+                (valueObj == null || countObj == null) && idObj == null) {
                 Boolean deleted = redisTemplate.delete(key);
-                return deleted ? "Successfully deleted key: " + key : "Key not found: " + key;
+                return deleted ? "Successfully deleted key: " + key : "Failed to delete key: " + key;
+            }
+            
+            // Get the type of the key
+            org.springframework.data.redis.connection.DataType dataType = redisTemplate.type(key);
+            
+            // Handle different data types
+            if (org.springframework.data.redis.connection.DataType.HASH.equals(dataType) && fieldObj != null) {
+                // Delete hash field
+                String field = fieldObj.toString();
+                Long removed = redisTemplate.opsForHash().delete(key, field);
+                return removed > 0 ? 
+                       "Successfully deleted field '" + field + "' from hash: " + key : 
+                       "Field not found in hash: " + field;
+            } 
+            else if (org.springframework.data.redis.connection.DataType.SET.equals(dataType) && memberObj != null) {
+                // Remove member from set
+                String member = memberObj.toString();
+                Boolean removed = redisTemplate.opsForSet().remove(key, member) > 0;
+                return removed ? 
+                       "Successfully removed member '" + member + "' from set: " + key : 
+                       "Member not found in set: " + member;
+            } 
+            else if (org.springframework.data.redis.connection.DataType.ZSET.equals(dataType) && memberObj != null) {
+                // Remove member from sorted set
+                String member = memberObj.toString();
+                Boolean removed = redisTemplate.opsForZSet().remove(key, member) > 0;
+                return removed ? 
+                       "Successfully removed member '" + member + "' from sorted set: " + key : 
+                       "Member not found in sorted set: " + member;
+            } 
+            else if (org.springframework.data.redis.connection.DataType.LIST.equals(dataType)) {
+                if (indexObj != null) {
+                    // Remove element at specific index by setting it to a placeholder and then removing the placeholder
+                    try {
+                        int index = Integer.parseInt(indexObj.toString());
+                        Long size = redisTemplate.opsForList().size(key);
+                        
+                        if (size == null || index < 0 || index >= size) {
+                            return "Error: Index out of range";
+                        }
+                        
+                        // Use a temporary placeholder value
+                        String placeholder = "__DELETED__" + System.currentTimeMillis();
+                        redisTemplate.opsForList().set(key, index, placeholder);
+                        redisTemplate.opsForList().remove(key, 1, placeholder);
+                        
+                        return "Successfully removed element at index " + index + " from list: " + key;
+                    } catch (NumberFormatException e) {
+                        return "Error: Invalid index format. Must be an integer";
+                    }
+                } 
+                else if (valueObj != null && countObj != null) {
+                    // Remove count occurrences of value
+                    String value = valueObj.toString();
+                    try {
+                        int count = Integer.parseInt(countObj.toString());
+                        Long removed = redisTemplate.opsForList().remove(key, count, value);
+                        return "Successfully removed " + removed + " occurrence(s) of '" + value + "' from list: " + key;
+                    } catch (NumberFormatException e) {
+                        return "Error: Invalid count format. Must be an integer";
+                    }
+                }
+                else {
+                    return "Error: For list operations, provide either 'index' or both 'value' and 'count'";
+                }
+            } 
+            else if (org.springframework.data.redis.connection.DataType.STREAM.equals(dataType) && idObj != null) {
+                // Delete message from stream
+                String id = idObj.toString();
+                Long removed = redisTemplate.opsForStream().delete(key, id);
+                return removed > 0 ? 
+                       "Successfully deleted message with ID '" + id + "' from stream: " + key : 
+                       "Message ID not found in stream: " + id;
+            } 
+            else {
+                // Fallback to deleting the entire key
+                Boolean deleted = redisTemplate.delete(key);
+                return deleted ? 
+                       "Successfully deleted key: " + key : 
+                       "Failed to delete key: " + key;
             }
         } catch (IOException e) {
             return "Invalid JSON format: " + e.getMessage().split(":")[0];
