@@ -17,7 +17,6 @@ import org.springframework.data.redis.connection.stream.StreamOffset;
 import org.springframework.data.redis.connection.stream.MapRecord;
 import org.springframework.data.redis.connection.stream.Record;
 import org.springframework.data.redis.connection.stream.RecordId;
-import org.springframework.data.redis.connection.stream.StreamRecordId;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.ai.tool.annotation.Tool;
@@ -245,7 +244,7 @@ public class RedisToolService {
                 RecordId recordId;
                 
                 if (id != null && !id.isEmpty()) {
-                    recordId = redisTemplate.opsForStream().add(key, streamEntries, StreamRecordId.of(id));
+                    recordId = redisTemplate.opsForStream().add(key, streamEntries, id);
                 } else {
                     recordId = redisTemplate.opsForStream().add(key, streamEntries);
                 }
